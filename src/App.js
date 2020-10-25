@@ -6,18 +6,37 @@ import webmidi from "webmidi"
 
 function App() {
 
-  const [lastReceivedMidiCC, setLastReceivedMidiCC] = useState(null)
-  const [webmidiDisabled, setWebmidiDisabled] = useState(false)
-  const [selectedMidiInput, setSelectedMidiInput] = useState(null)
-  const [midiInputs, setMidiInputs] = useState([])
-  const [fileContents, setFileContents] = useState(null)
-  const [mappingForIndex, setMappingForIndex] = useState(null)
+    const [lastReceivedMidiCC, setLastReceivedMidiCC] = useState(null)
+    const [webmidiDisabled, setWebmidiDisabled] = useState(false)
+    const [selectedMidiInput, setSelectedMidiInput] = useState(null)
+    const [midiInputs, setMidiInputs] = useState([])
+    const [fileContents, setFileContents] = useState(null)
+    const [mappingForIndex, setMappingForIndex] = useState(null)
 
-  const {getRootProps, getInputProps, open, acceptedFiles} = useDropzone({
-    noClick: true,
-    noKeyboard: true,
-    maxFiles: 1
-  })
+    const {getRootProps, getInputProps, open, acceptedFiles} = useDropzone({
+        noClick: true,
+        noKeyboard: true,
+        maxFiles: 1
+    })
+
+    useEffect(() => {
+        webmidi.enable(function (err) {
+            if (err && !webmidiDisabled) {
+                console.log("WebMidi could not be enabled.", err);
+                setWebmidiDisabled(true);
+            }
+
+            setMidiInputs(webmidi.inputs)
+        })
+    }, [webmidiDisabled])
+
+    useEffect(() => {
+        const midiInputScannerTimer = setInterval(() => {
+            setMidiInputs([...webmidi.inputs])
+        }, 500)
+
+        return () => clearInterval(midiInputScannerTimer)
+    },[])
 
     useEffect(() => {
         const selectedFile = acceptedFiles[0]
@@ -38,27 +57,18 @@ function App() {
         }
     }, [acceptedFiles])
 
-    useEffect(() => {
-        webmidi.enable(function (err) {
-            if (err && !webmidiDisabled) {
-                console.log("WebMidi could not be enabled.", err);
-                setWebmidiDisabled(true);
-            }
-
-            setMidiInputs(webmidi.inputs)
-        });
-    })
-
     const selectMidiInput = (inputId) => {
         const input = webmidi.getInputById(inputId);
 
         input.addListener('controlchange', "all", (midiMessage) => {
-            setLastReceivedMidiCC({
-                channel: midiMessage.channel,
-                cc: midiMessage.controller.number,
-                value: midiMessage.value
-            })
-        });
+            if(!!mappingForIndex) {
+                setLastReceivedMidiCC({
+                    channel: midiMessage.channel,
+                    cc: midiMessage.controller.number,
+                    value: midiMessage.value
+                })
+            }
+        })
 
         setSelectedMidiInput(input)
     }
@@ -71,16 +81,19 @@ function App() {
         setMappingForIndex(-1)
     }
 
+    const rescanMidiInputs = () => {
+        setMidiInputs([...webmidi.inputs])
+    }
+
     useEffect(() => {
         if(mappingForIndex >= 0 && !!lastReceivedMidiCC) {
             fileContents[mappingForIndex][2] = lastReceivedMidiCC.channel
             fileContents[mappingForIndex][3] = lastReceivedMidiCC.cc
         }
-    }, [lastReceivedMidiCC])
+    }, [lastReceivedMidiCC, fileContents, mappingForIndex])
 
   return (
       <div className="container">
-
           <div>
               {webmidiDisabled ? (
                   <div>MIDI does not work in this browser!</div>
@@ -88,11 +101,11 @@ function App() {
                   <div>
                       <div>MIDI Inputs:</div>
                       <div>
-                          {
+                          { midiInputs.length > 0 &&
                             midiInputs.map((input) => {
                                 const backgroundColor = !!selectedMidiInput && input.id === selectedMidiInput.id ? "lightgray" : "white";
                                   return (
-                                      <div key={input.name} >
+                                      <div key={input.id} >
                                           <button
                                               style={{backgroundColor}}
                                               onClick={() => selectMidiInput(input.id)}
@@ -103,6 +116,19 @@ function App() {
                                   )
                             })
                           }
+                          {midiInputs.length > 0 && (
+                              <div>
+                                  No MIDI Inputs Found
+                              </div>
+                          )}
+                          <div>
+                              <button
+                                  style={{backgroundColor: "white"}}
+                                  onClick={rescanMidiInputs}
+                              >
+                                  Rescan MIDI Inputs
+                              </button>
+                          </div>
                       </div>
                   </div>
               )}
